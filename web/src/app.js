@@ -178,7 +178,14 @@ class App {
 
   configureMusic() {
     const bank = this.pickBank();
-    this.audio.configureMusic({ bankUrl: bank?.url || null, bankName: bank?.name || '' });
+    const bundled = BUILD.soundfont ? { url: BUILD.soundfont, name: BUILD.soundfontName } : null;
+    this.audio.configureMusic({
+      bankUrl: bank?.url || null,
+      bankName: bank?.name || '',
+      // If the player's own bank can't be read, play with the bundled one.
+      fallbackUrl: bundled && bundled.url !== bank?.url ? bundled.url : null,
+      fallbackName: bundled?.name || '',
+    });
   }
 
   async syncEngineScores() {
@@ -665,9 +672,18 @@ class App {
     this.settings.addEventListener('change', (e) => this.onSettingChanged(e.detail.path));
 
     this.audio.onMusicStatus = (s) => {
-      if (s.state === 'loading') this.toast(`Loading music… ${Math.round(s.progress * 100)}%`, 'info', 0, 'music');
-      else if (s.state === 'ready') this.toast(`Music ready (${s.bankName})`, 'info', 2200, 'music');
-      else this.toast(`Music unavailable: ${s.error}`, 'error', 5000, 'music');
+      if (s.state === 'loading') {
+        this.toast(`Loading music (${s.bankName})… ${Math.round(s.progress * 100)}%`, 'info', 0, 'music');
+      } else if (s.state === 'preparing') {
+        this.toast(`Loading instruments from ${s.bankName}…`, 'info', 0, 'music');
+      } else if (s.state === 'ready' && s.fallbackFrom) {
+        this.toast(`${s.fallbackFrom} couldn't be read (${s.error}), so music is using ${s.bankName}`, 'error', 9000, 'music');
+      } else if (s.state === 'ready') {
+        this.toast(`Music ready (${s.bankName})`, 'info', 2200, 'music');
+      } else {
+        this.toast(`Music unavailable: ${s.error}`, 'error', 7000, 'music');
+      }
+      if ($('#settings').open && this.settingsTab === 'sound') this.renderSettings('sound', { keepFocus: true });
     };
   }
 
@@ -982,6 +998,15 @@ class App {
     } else if (tab === 'sound') {
       const bank = this.pickBank();
       const hasMusic = st?.musicAvailable;
+      const err = this.audio.musicError;
+      let bankHelp;
+      if (!bank) bankHelp = 'No sound bank is available, so music is off.';
+      else if (err && err.bankName === bank.name) {
+        bankHelp = this.audio.musicBank
+          ? `${err.bankName} couldn't be read (${err.reason}), so music is using ${this.audio.musicBank}.`
+          : `${err.bankName} couldn't be read (${err.reason}).`;
+      } else if (this.audio.musicBank) bankHelp = `Playing through ${this.audio.musicBank}. Auto uses gm.dls (the Windows synth) when it is in your game data.`;
+      else bankHelp = `Will use ${bank.name}. Auto uses gm.dls (the Windows synth) when it is in your game data.`;
       content = [
         group('Volume',
           row('Master', range('audio.master', 'Master volume')),
@@ -990,8 +1015,7 @@ class App {
         group('Music',
           row('Play music', toggle('audio.musicOn', 'Play music'),
             hasMusic === false ? 'This table\'s data has no music file (PINBALL.MID or the Full Tilt TABA tracks).' : null),
-          row('Instrument sounds', seg('audio.bank', [['auto', 'Auto'], ['bundled', 'Bundled']]),
-            bank ? `Playing through ${bank.name}. Auto uses gm.dls (the Windows synth) when it is in your game data.` : 'No sound bank is available, so music is off.')),
+          row('Instrument sounds', seg('audio.bank', [['auto', 'Auto'], ['bundled', 'Bundled']]), bankHelp)),
         group('Effects',
           row('Stereo positioning', toggle('audio.stereo', 'Stereo positioning'), 'Places each sound left or right of where it happens on the table.')),
       ];

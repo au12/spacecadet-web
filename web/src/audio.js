@@ -60,7 +60,11 @@ export class AudioEngine {
     this.music = null;          // MusicPlayer once loaded
     this.musicLoading = null;
     this.musicWanted = false;
-    this.musicConfig = { bankUrl: null, bankName: '' };
+    this.musicConfig = { bankUrl: null, bankName: '', fallbackUrl: null, fallbackName: '' };
+    this.musicGen = 0;
+    this.musicFailed = false;
+    this.musicError = null;   // { bankName, reason } when the chosen bank was rejected
+    this.musicBank = null;    // name of the bank actually playing
     this.onMusicStatus = null;
 
     this._unlock = this._unlock.bind(this);
@@ -207,14 +211,22 @@ export class AudioEngine {
 
   setMusicVolume() { /* the engine always runs at full volume; the page mixes */ }
 
-  /** Chooses the sound bank used for music; takes effect on the next load. */
-  configureMusic({ bankUrl, bankName }) {
-    if (bankUrl === this.musicConfig.bankUrl) return;
-    this.musicConfig = { bankUrl, bankName };
+  /**
+   * Chooses the sound bank used for music; takes effect on the next load.
+   * `fallback*` is tried when the chosen bank can't be read (e.g. a gm.dls
+   * the synthesizer rejects), so music still plays.
+   */
+  configureMusic({ bankUrl, bankName, fallbackUrl = null, fallbackName = '' }) {
+    const c = this.musicConfig;
+    if (bankUrl === c.bankUrl && fallbackUrl === c.fallbackUrl) return;
+    this.musicConfig = { bankUrl, bankName, fallbackUrl, fallbackName };
+    this.musicGen = (this.musicGen || 0) + 1;
+    this.musicFailed = false;
+    this.musicError = null;
+    this.musicBank = null;
     if (this.music) {
       this.music.destroy();
       this.music = null;
-      this.musicLoading = null;
       if (this.musicWanted && this.currentTrack) this.playMusic(this.currentTrack);
     }
   }
@@ -222,22 +234,52 @@ export class AudioEngine {
   _ensureMusic() {
     if (this.music) return Promise.resolve(this.music);
     if (this.musicLoading) return this.musicLoading;
-    const { bankUrl, bankName } = this.musicConfig;
-    if (!bankUrl) return Promise.resolve(null);
+    const cfg = this.musicConfig;
+    if (!cfg.bankUrl || this.musicFailed) return Promise.resolve(null);
+    const gen = this.musicGen;
     const status = (s) => this.onMusicStatus?.(s);
-    this.musicLoading = import('./music.js')
-      .then(({ MusicPlayer }) => MusicPlayer.create(this.ctx, this.musicBus, bankUrl, (p) => status({ state: 'loading', progress: p, bankName })))
-      .then((player) => {
-        this.music = player;
-        status({ state: 'ready', bankName });
-        return player;
-      })
-      .catch((err) => {
-        console.warn('Music unavailable:', err);
-        status({ state: 'error', error: String(err?.message || err), bankName });
-        this.musicLoading = null;
-        return null;
+    const load = async (url, name) => {
+      const { MusicPlayer } = await import('./music.js');
+      return MusicPlayer.create(this.ctx, this.musicBus, url, {
+        onProgress: (p) => status({ state: 'loading', progress: p, bankName: name }),
+        onStage: () => status({ state: 'preparing', bankName: name }),
       });
+    };
+
+    this.musicLoading = (async () => {
+      let player = null;
+      try {
+        player = await load(cfg.bankUrl, cfg.bankName);
+        this.musicBank = cfg.bankName;
+        status({ state: 'ready', bankName: cfg.bankName });
+      } catch (err) {
+        const reason = String(err?.message || err);
+        console.warn(`Music: ${cfg.bankName} could not be used:`, reason);
+        this.musicError = { bankName: cfg.bankName, reason };
+        if (cfg.fallbackUrl && cfg.fallbackUrl !== cfg.bankUrl) {
+          try {
+            player = await load(cfg.fallbackUrl, cfg.fallbackName);
+            this.musicBank = cfg.fallbackName;
+            status({ state: 'ready', bankName: cfg.fallbackName, fallbackFrom: cfg.bankName, error: reason });
+          } catch (err2) {
+            console.warn(`Music: ${cfg.fallbackName} could not be used either:`, err2);
+            status({ state: 'error', bankName: cfg.fallbackName, error: String(err2?.message || err2) });
+          }
+        } else {
+          status({ state: 'error', bankName: cfg.bankName, error: reason });
+        }
+      }
+      this.musicLoading = null;
+      if (gen !== this.musicGen) {
+        // The bank choice changed while this one loaded; start over.
+        player?.destroy();
+        return this._ensureMusic();
+      }
+      this.music = player;
+      // Don't retry a bank that failed on every track change.
+      if (!player) this.musicFailed = true;
+      return player;
+    })();
     return this.musicLoading;
   }
 

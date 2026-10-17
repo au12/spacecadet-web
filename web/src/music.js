@@ -35,16 +35,50 @@ async function fetchWithProgress(url, onProgress) {
   return out.buffer;
 }
 
+const LOAD_TIMEOUT_MS = 30000;
+
+/** Turns a synthesizer error into one short sentence for the player. */
+function reasonOf(err) {
+  const text = String(err?.message || err || 'unknown error');
+  return text.replace(/\s*The file may be corrupted\.?\s*$/i, '').replace(/^Error:\s*/, '');
+}
+
 export class MusicPlayer {
-  static async create(ctx, destination, bankUrl, onProgress) {
+  /**
+   * Downloads a sound bank and starts a synthesizer with it.
+   * Rejects (never hangs) when the bank can't be used: SpessaSynth reports
+   * parse failures as a `soundBankError` event and leaves addSoundBank()
+   * pending forever, so that event and a timeout are raced against it.
+   */
+  static async create(ctx, destination, bankUrl, { onProgress, onStage } = {}) {
     const [bank] = await Promise.all([
       fetchWithProgress(bankUrl, onProgress),
       ctx.audioWorklet.addModule(PROCESSOR_URL.href),
     ]);
+    onStage?.('instruments');
+
     const synth = new WorkletSynthesizer(ctx);
+    let timer = 0;
+    const failure = new Promise((_, reject) => {
+      synth.eventHandler.addEvent('soundBankError', 'spacecadet-load', (err) => reject(new Error(reasonOf(err))));
+      timer = setTimeout(() => reject(new Error('the synthesizer did not respond')), LOAD_TIMEOUT_MS);
+    });
+    try {
+      await Promise.race([
+        (async () => {
+          await synth.soundBankManager.addSoundBank(bank, 'main');
+          await synth.isReady;
+        })(),
+        failure,
+      ]);
+    } catch (err) {
+      try { synth.destroy?.(); } catch { /* already gone */ }
+      throw new Error(reasonOf(err));
+    } finally {
+      clearTimeout(timer);
+      synth.eventHandler.removeEvent('soundBankError', 'spacecadet-load');
+    }
     synth.connect(destination);
-    await synth.soundBankManager.addSoundBank(bank, 'main');
-    await synth.isReady;
     return new MusicPlayer(synth);
   }
 
