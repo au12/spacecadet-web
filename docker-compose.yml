@@ -1,0 +1,26 @@
+services:
+  spacecadet:
+    build: .
+    image: spacecadet-web:latest
+    container_name: spacecadet
+    ports:
+      - "8080:8080"
+    environment:
+      # The server starts as root only long enough to make /config writable,
+      # then runs as this user. Unraid: 99 / 100.
+      PUID: "1000"
+      PGID: "1000"
+      # Behind a reverse proxy (e.g. Nginx Proxy Manager), trust its
+      # X-Forwarded-For so the score rate limit is per player, not per proxy.
+      # TRUST_PROXY: "true"
+      # LEADERBOARD: "false"   # disable the shared high-score table
+      # LOG_REQUESTS: "true"
+    volumes:
+      # Your game files: the Pinball folder from Windows (PINBALL.DAT, *.WAV,
+      # PINBALL.MID) and/or Full Tilt! Pinball's CADET folder. Subfolders are
+      # fine. Drop gm.dls in here too for the authentic Windows music synth.
+      - ./gamedata:/data:ro
+      # Shared high scores (scores.json).
+      - ./config:/config
+    read_only: true
+    restart: unless-stopped

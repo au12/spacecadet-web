@@ -1,0 +1,22 @@
+<?xml version="1.0"?>
+<Container version="2">
+  <Name>spacecadet</Name>
+  <Repository>ghcr.io/au12/spacecadet-web:latest</Repository>
+  <Registry>https://github.com/au12/spacecadet-web/pkgs/container/spacecadet-web</Registry>
+  <Network>bridge</Network>
+  <Privileged>false</Privileged>
+  <Support>https://github.com/au12/spacecadet-web</Support>
+  <Project>https://github.com/au12/spacecadet-web</Project>
+  <Overview>3D Pinball: Space Cadet in the browser. Smooth vsync-locked WebAssembly engine, Shift-key flippers, shared high scores, gamepad and touch support. Supply your own game files from Windows or Full Tilt! Pinball.</Overview>
+  <Category>GameServers: Other:</Category>
+  <WebUI>http://[IP]:[PORT:8080]/</WebUI>
+  <Icon>https://raw.githubusercontent.com/au12/spacecadet-web/main/web/public/icon-512.png</Icon>
+  <ExtraParams>--read-only</ExtraParams>
+  <Config Name="Web port" Target="8080" Default="8088" Mode="tcp" Description="Port for the game" Type="Port" Display="always" Required="true" Mask="false">8088</Config>
+  <Config Name="Game data" Target="/data" Default="/mnt/user/appdata/spacecadet/gamedata" Mode="ro" Description="Folder with PINBALL.DAT and its sounds (and/or Full Tilt CADET.DAT). Optional: gm.dls for authentic music." Type="Path" Display="always" Required="true" Mask="false">/mnt/user/appdata/spacecadet/gamedata</Config>
+  <Config Name="Config" Target="/config" Default="/mnt/user/appdata/spacecadet/config" Mode="rw" Description="Shared high scores" Type="Path" Display="always" Required="true" Mask="false">/mnt/user/appdata/spacecadet/config</Config>
+  <Config Name="PUID" Target="PUID" Default="99" Mode="" Description="User the server runs as" Type="Variable" Display="advanced" Required="false" Mask="false">99</Config>
+  <Config Name="PGID" Target="PGID" Default="100" Mode="" Description="Group the server runs as" Type="Variable" Display="advanced" Required="false" Mask="false">100</Config>
+  <Config Name="Trust proxy" Target="TRUST_PROXY" Default="false" Mode="" Description="Set true behind Nginx Proxy Manager so per-player rate limits use X-Forwarded-For" Type="Variable" Display="advanced" Required="false" Mask="false">false</Config>
+  <Config Name="Leaderboard" Target="LEADERBOARD" Default="true" Mode="" Description="Shared high-score table" Type="Variable" Display="advanced" Required="false" Mask="false">true</Config>
+</Container>

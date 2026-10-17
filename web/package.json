@@ -1,0 +1,20 @@
+{
+  "name": "spacecadet-web",
+  "private": true,
+  "version": "1.0.0",
+  "description": "Browser front end for 3D Pinball: Space Cadet (WebAssembly)",
+  "type": "module",
+  "scripts": {
+    "build": "node build.mjs",
+    "watch": "node build.mjs --watch"
+  },
+  "dependencies": {
+    "@fontsource-variable/pixelify-sans": "5.3.0",
+    "@fontsource/chakra-petch": "5.3.0",
+    "spessasynth_lib": "4.3.14"
+  },
+  "devDependencies": {
+    "esbuild": "0.28.2",
+    "wasm-media-encoders": "0.7.0"
+  }
+}

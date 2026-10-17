@@ -1,0 +1,299 @@
+diff --git a/CMakeLists.txt b/CMakeLists.txt
+index fb705ed..011452b 100644
+--- a/CMakeLists.txt
++++ b/CMakeLists.txt
+@@ -32,8 +32,18 @@ endif()
+ # SDL2main is not needed
+ set(SDL2_BUILDING_LIBRARY ON)
+ 
+-find_package(SDL2 REQUIRED)
+-FIND_PACKAGE(SDL2_mixer REQUIRED)
++if(EMSCRIPTEN)
++    # Web build: SDL2 comes from the Emscripten port; SDL_mixer is replaced by
++    # a WebAudio shim (Platform/Web/web_mixer.*).
++    set(SCP_WEB_DIR "${CMAKE_CURRENT_LIST_DIR}/Platform/Web")
++    set(SDL2_INCLUDE_DIR "")
++    set(SDL2_MIXER_INCLUDE_DIR "${SCP_WEB_DIR}")
++    set(SDL2_LIBRARY "")
++    set(SDL2_MIXER_LIBRARY "")
++else()
++    find_package(SDL2 REQUIRED)
++    FIND_PACKAGE(SDL2_mixer REQUIRED)
++endif()
+ 
+ include_directories(${SDL2_INCLUDE_DIR} ${SDL2_MIXER_INCLUDE_DIR})
+ get_property(dirs DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR} PROPERTY INCLUDE_DIRECTORIES)
+@@ -194,8 +204,45 @@ if(WIN32)
+     list(APPEND SOURCE_FILES SpaceCadetPinball/SpaceCadetPinball.rc)
+ endif(WIN32)
+ 
++if(EMSCRIPTEN)
++    list(REMOVE_ITEM SOURCE_FILES SpaceCadetPinball/SpaceCadetPinball.cpp)
++    list(APPEND SOURCE_FILES
++            ${SCP_WEB_DIR}/web_api.h
++            ${SCP_WEB_DIR}/web_main.cpp
++            ${SCP_WEB_DIR}/web_mixer.h
++            ${SCP_WEB_DIR}/web_mixer.cpp
++            )
++    set(CMAKE_EXECUTABLE_SUFFIX ".mjs")
++endif()
++
+ add_executable(SpaceCadetPinball ${SOURCE_FILES})
+ 
++if(EMSCRIPTEN)
++    set_target_properties(SpaceCadetPinball PROPERTIES OUTPUT_NAME "pinball")
++    target_include_directories(SpaceCadetPinball PRIVATE ${SCP_WEB_DIR} SpaceCadetPinball)
++    target_compile_definitions(SpaceCadetPinball PRIVATE SCP_WEB)
++    target_compile_options(SpaceCadetPinball PRIVATE -sUSE_SDL=2 -fno-exceptions -flto)
++    target_link_options(SpaceCadetPinball PRIVATE
++            -sUSE_SDL=2
++            -flto
++            --no-entry
++            -sMODULARIZE=1
++            -sEXPORT_ES6=1
++            -sEXPORT_NAME=createPinball
++            -sENVIRONMENT=web
++            -sINVOKE_RUN=0
++            -sEXIT_RUNTIME=0
++            -sALLOW_MEMORY_GROWTH=1
++            -sINITIAL_MEMORY=64MB
++            -sSTACK_SIZE=1MB
++            -sFORCE_FILESYSTEM=1
++            -sTEXTDECODER=2
++            -sINCOMING_MODULE_JS_API=[locateFile,print,printErr,onAbort,scpAudio,onEngineMessage,wasmBinary,instantiateWasm]
++            "-sEXPORTED_FUNCTIONS=[_malloc,_free]"
++            "-sEXPORTED_RUNTIME_METHODS=[FS,HEAPU8,HEAP32,UTF8ToString,stringToUTF8,lengthBytesUTF8]"
++            )
++endif()
++
+ # Skip pch on foreign code
+ set_source_files_properties(
+         SpaceCadetPinball/imgui.cpp
+diff --git a/SpaceCadetPinball/gdrv.cpp b/SpaceCadetPinball/gdrv.cpp
+index 57f5a07..cdfb6b8 100644
+--- a/SpaceCadetPinball/gdrv.cpp
++++ b/SpaceCadetPinball/gdrv.cpp
+@@ -125,6 +125,9 @@ void gdrv_bitmap8::ScaleIndexed(float scaleX, float scaleY)
+ 
+ void gdrv_bitmap8::CreateTexture(const char* scaleHint, int access)
+ {
++#ifdef SCP_WEB
++	return;
++#endif
+ 	if (Texture != nullptr)
+ 	{
+ 		SDL_DestroyTexture(Texture);
+@@ -143,6 +146,9 @@ void gdrv_bitmap8::CreateTexture(const char* scaleHint, int access)
+ 
+ void gdrv_bitmap8::BlitToTexture()
+ {
++#ifdef SCP_WEB
++	return;
++#endif
+ 	assertm(Texture, "Updating null texture");
+ 	int pitch = 0;
+ 	ColorRgba* lockedPixels;
+@@ -213,6 +219,7 @@ void gdrv::fill_bitmap(gdrv_bitmap8* bmp, int width, int height, int xOff, int y
+ 
+ void gdrv::fill_bitmap(gdrv_bitmap8* bmp, int width, int height, int xOff, int yOff, ColorRgba fillColor)
+ {
++	SCP_MARK_DIRTY(bmp, xOff, yOff, width, height);
+ 	auto bmpPtr = &bmp->BmpBufPtr1[bmp->Width * yOff + xOff];
+ 	for (; height > 0; --height)
+ 	{
+@@ -225,6 +232,7 @@ void gdrv::fill_bitmap(gdrv_bitmap8* bmp, int width, int height, int xOff, int y
+ void gdrv::copy_bitmap(gdrv_bitmap8* dstBmp, int width, int height, int xOff, int yOff, gdrv_bitmap8* srcBmp,
+                        int srcXOff, int srcYOff)
+ {
++	SCP_MARK_DIRTY(dstBmp, xOff, yOff, width, height);
+ 	auto srcPtr = &srcBmp->BmpBufPtr1[srcBmp->Stride * srcYOff + srcXOff];
+ 	auto dstPtr = &dstBmp->BmpBufPtr1[dstBmp->Stride * yOff + xOff];
+ 
+@@ -239,6 +247,7 @@ void gdrv::copy_bitmap(gdrv_bitmap8* dstBmp, int width, int height, int xOff, in
+ void gdrv::copy_bitmap_w_transparency(gdrv_bitmap8* dstBmp, int width, int height, int xOff, int yOff,
+                                       gdrv_bitmap8* srcBmp, int srcXOff, int srcYOff)
+ {
++	SCP_MARK_DIRTY(dstBmp, xOff, yOff, width, height);
+ 	auto srcPtr = &srcBmp->BmpBufPtr1[srcBmp->Stride * srcYOff + srcXOff];
+ 	auto dstPtr = &dstBmp->BmpBufPtr1[dstBmp->Stride * yOff + xOff];
+ 
+@@ -259,6 +268,7 @@ void gdrv::copy_bitmap_w_transparency(gdrv_bitmap8* dstBmp, int width, int heigh
+ 
+ void gdrv::ScrollBitmapHorizontal(gdrv_bitmap8* bmp, int xStart)
+ {
++	SCP_MARK_DIRTY(bmp, 0, 0, bmp->Width, bmp->Height);
+ 	auto srcPtr = bmp->BmpBufPtr1;
+ 	auto startOffset = xStart >= 0 ? 0 : -xStart;
+ 	auto endOffset = xStart >= 0 ? xStart : 0;
+@@ -303,6 +313,9 @@ void gdrv::ApplyPalette(gdrv_bitmap8& bmp)
+ 
+ void gdrv::CreatePreview(gdrv_bitmap8& bmp)
+ {
++#ifdef SCP_WEB
++	return;
++#endif
+ 	if (bmp.Texture)
+ 		return;
+ 
+diff --git a/SpaceCadetPinball/pb.cpp b/SpaceCadetPinball/pb.cpp
+index 0762832..702d7b0 100644
+--- a/SpaceCadetPinball/pb.cpp
++++ b/SpaceCadetPinball/pb.cpp
+@@ -40,6 +40,9 @@ std::string pb::DatFileName, pb::BasePath;
+ ImU32 pb::TextBoxColor;
+ int pb::quickFlag = 0;
+ TTextBox *pb::InfoTextBox, *pb::MissTextBox;
++#ifdef SCP_WEB
++bool pb::SkipRender = false;
++#endif
+ 
+ 
+ int pb::init()
+@@ -320,6 +323,9 @@ void pb::frame(float dtMilliSec)
+ 		nudge::nudge_count = nudgeDec;
+ 	}
+ 	timer::check();
++#ifdef SCP_WEB
++	if (!SkipRender)
++#endif
+ 	render::update();
+ 	score::update(MainTable->CurScoreStruct);
+ 	if (!MainTable->TiltLockFlag)
+@@ -690,7 +696,13 @@ void pb::end_game()
+ 		}
+ 	}
+ 
++#ifdef SCP_WEB
++	// Name entry and leaderboards are handled by the page.
++	scp_on_game_over(demo_mode);
++	if (false)
++#else
+ 	if (!demo_mode && !MainTable->CheatsUsed)
++#endif
+ 	{
+ 		for (auto i = 0; i < playerCount; ++i)
+ 		{
+@@ -770,7 +782,11 @@ std::string pb::make_path_name(const std::string& fileName)
+ void pb::ShowMessageBox(Uint32 flags, LPCSTR title, LPCSTR message)
+ {
+ 	fprintf(flags == SDL_MESSAGEBOX_ERROR ? stderr : stdout, "BL error: %s\n%s\n", title, message);
++#ifdef SCP_WEB
++	scp_show_message(flags, title, message);
++#else
+ 	SDL_ShowSimpleMessageBox(flags, title, message, winmain::MainWindow);
++#endif
+ }
+ 
+ float pb::BallToBallCollision(const ray_type& ray, const TBall& ball, TEdgeSegment** edge, float collisionDistance)
+diff --git a/SpaceCadetPinball/pb.h b/SpaceCadetPinball/pb.h
+index 3a01318..578632e 100644
+--- a/SpaceCadetPinball/pb.h
++++ b/SpaceCadetPinball/pb.h
+@@ -55,6 +55,9 @@ public:
+ 	static ImU32 TextBoxColor;
+ 	static int quickFlag;
+ 	static TTextBox *InfoTextBox, *MissTextBox;
++#ifdef SCP_WEB
++	static bool SkipRender;
++#endif
+ 
+ 	static int init();
+ 	static int uninit();
+diff --git a/SpaceCadetPinball/pch.h b/SpaceCadetPinball/pch.h
+index a2cbcfe..ec41ef8 100644
+--- a/SpaceCadetPinball/pch.h
++++ b/SpaceCadetPinball/pch.h
+@@ -35,7 +35,11 @@
+ 
+ #define SDL_MAIN_HANDLED
+ #include "SDL.h"
++#ifdef SCP_WEB
++#include "web_mixer.h"
++#else
+ #include <SDL_mixer.h>
++#endif
+ 
+ // MIX_INIT_FLUIDSYNTH was renamed to MIX_INIT_MID in SDL_mixer v2.0.2
+ // Older versions of SDL_mixer did not have SDL_MIXER_VERSION_ATLEAST
+@@ -111,7 +115,8 @@ const T& Clamp(const T& n, const T& lower, const T& upper)
+ }
+ 
+ // UTF-8 path adapter for fopen on Windows, implemented in SpaceCadetPinball.cpp
+-#ifdef _WIN32
++// Web: case-insensitive lookup for Windows game data, implemented in web_main.cpp
++#if defined(_WIN32) || defined(SCP_WEB)
+ extern FILE* fopenu(const char* path, const char* opt);
+ #else
+ inline FILE* fopenu(const char* path, const char* opt)
+@@ -133,4 +138,11 @@ constexpr const char* PlatformDataPaths[2] =
+ 
+ constexpr float Pi = 3.14159265358979323846f;
+ 
++#ifdef SCP_WEB
++#include "web_api.h"
++#define SCP_MARK_DIRTY(bmp, x, y, w, h) scp_mark_dirty(bmp, x, y, w, h)
++#else
++#define SCP_MARK_DIRTY(bmp, x, y, w, h) ((void)0)
++#endif
++
+ #endif //PCH_H
+diff --git a/SpaceCadetPinball/render.cpp b/SpaceCadetPinball/render.cpp
+index a7faa2e..baa967e 100644
+--- a/SpaceCadetPinball/render.cpp
++++ b/SpaceCadetPinball/render.cpp
+@@ -139,6 +139,10 @@ void render::uninit()
+ 
+ void render::recreate_screen_texture()
+ {
++#ifdef SCP_WEB
++	// The page uploads vscreen to its own WebGL texture.
++	return;
++#endif
+ 	vscreen->CreateTexture(options::Options.LinearFiltering ? "linear" : "nearest", SDL_TEXTUREACCESS_STREAMING);
+ }
+ 
+diff --git a/SpaceCadetPinball/render.h b/SpaceCadetPinball/render.h
+index bf27cf8..ddd5535 100644
+--- a/SpaceCadetPinball/render.h
++++ b/SpaceCadetPinball/render.h
+@@ -53,6 +53,10 @@ public:
+ 	static void build_occlude_list();
+ 	static void SpriteViewer(bool* show);
+ 	static void PresentVScreen();
++#ifdef SCP_WEB
++	static int GetOffsetX() { return offset_x; }
++	static int GetOffsetY() { return offset_y; }
++#endif
+ private:
+ 	static std::vector<render_sprite*> sprite_list, ball_list;
+ 	static int offset_x, offset_y;
+diff --git a/SpaceCadetPinball/zdrv.cpp b/SpaceCadetPinball/zdrv.cpp
+index 5ed5925..4bbb0a0 100644
+--- a/SpaceCadetPinball/zdrv.cpp
++++ b/SpaceCadetPinball/zdrv.cpp
+@@ -47,6 +47,7 @@ void zdrv::paint(int width, int height, gdrv_bitmap8* dstBmp, int dstBmpXOff, in
+                  int dstZMapXOff, int dstZMapYOff, gdrv_bitmap8* srcBmp, int srcBmpXOff, int srcBmpYOff,
+                  zmap_header_type* srcZMap, int srcZMapXOff, int srcZMapYOff)
+ {
++	SCP_MARK_DIRTY(dstBmp, dstBmpXOff, dstBmpYOff, width, height);
+ 	assertm(srcBmp->BitmapType != BitmapTypes::Spliced, "Wrong bmp type");
+ 
+ 	auto srcPtr = &srcBmp->BmpBufPtr1[srcBmp->Stride * srcBmpYOff + srcBmpXOff];
+@@ -80,6 +81,7 @@ void zdrv::paint_flat(int width, int height, gdrv_bitmap8* dstBmp, int dstBmpXOf
+                       zmap_header_type* zMap, int dstZMapXOff, int dstZMapYOff, gdrv_bitmap8* srcBmp, int srcBmpXOff,
+                       int srcBmpYOff, uint16_t depth)
+ {
++	SCP_MARK_DIRTY(dstBmp, dstBmpXOff, dstBmpYOff, width, height);
+ 	assertm(srcBmp->BitmapType != BitmapTypes::Spliced, "Wrong bmp type");
+ 
+ 	auto dstPtr = &dstBmp->BmpBufPtr1[dstBmp->Stride * dstBmpYOff + dstBmpXOff];
+@@ -107,6 +109,9 @@ void zdrv::paint_flat(int width, int height, gdrv_bitmap8* dstBmp, int dstBmpXOf
+ 
+ void zdrv::CreatePreview(zmap_header_type& zMap)
+ {
++#ifdef SCP_WEB
++	return;
++#endif
+ 	if (zMap.Texture)
+ 		return;
+ 

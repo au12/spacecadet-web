@@ -1,0 +1,9 @@
+# Never send game data or local state into the build context.
+gamedata
+config
+**/node_modules
+web/dist
+web/engine-dist
+web/.cache
+.git
+.github

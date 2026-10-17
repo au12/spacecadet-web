@@ -1,0 +1,187 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, viewport-fit=cover">
+  <meta name="theme-color" content="#07061a">
+  <meta name="color-scheme" content="dark">
+  <meta name="description" content="3D Pinball: Space Cadet, running natively in your browser.">
+  <meta name="mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+  <title>Space Cadet Pinball</title>
+  <link rel="manifest" href="manifest.webmanifest">
+  <link rel="icon" href="icon.svg" type="image/svg+xml">
+  <link rel="apple-touch-icon" href="icon-192.png">
+  <!--build:head-->
+</head>
+<body>
+  <svg width="0" height="0" style="position:absolute" aria-hidden="true">
+    <symbol id="i-gear" viewBox="0 0 16 16"><path fill="currentColor" d="M7 0h2l.4 2.1 1.4.6 1.8-1.2 1.4 1.4-1.2 1.8.6 1.4L16 7v2l-2.1.4-.6 1.4 1.2 1.8-1.4 1.4-1.8-1.2-1.4.6L9 16H7l-.4-2.1-1.4-.6-1.8 1.2-1.4-1.4 1.2-1.8-.6-1.4L0 9V7l2.1-.4.6-1.4-1.2-1.8 1.4-1.4 1.8 1.2 1.4-.6zm1 5a3 3 0 100 6 3 3 0 000-6z"/></symbol>
+    <symbol id="i-full" viewBox="0 0 16 16"><path fill="currentColor" d="M1 1h5v2H3v3H1zm9 0h5v5h-2V3h-3zM1 10h2v3h3v2H1zm12 0h2v5h-5v-2h3z"/></symbol>
+    <symbol id="i-exit-full" viewBox="0 0 16 16"><path fill="currentColor" d="M4 1h2v5H1V4h3zm6 0h2v3h3v2h-5zM1 10h5v5H4v-3H1zm9 0h5v2h-3v3h-2z"/></symbol>
+    <symbol id="i-disk" viewBox="0 0 16 16"><path fill="currentColor" d="M1 1h11l3 3v11H1zm3 1v4h7V2zm5 1h1v2H9zM3 9v5h10V9z"/></symbol>
+    <symbol id="i-close" viewBox="0 0 16 16"><path fill="currentColor" d="M2 3.4L3.4 2 8 6.6 12.6 2 14 3.4 9.4 8l4.6 4.6-1.4 1.4L8 9.4 3.4 14 2 12.6 6.6 8z"/></symbol>
+    <symbol id="i-menu" viewBox="0 0 16 16"><path fill="currentColor" d="M2 3h12v2H2zm0 4h12v2H2zm0 4h12v2H2z"/></symbol>
+  </svg>
+
+  <main id="stage" aria-label="Pinball table">
+    <canvas id="stars" aria-hidden="true"></canvas>
+    <canvas id="screen" aria-hidden="true"></canvas>
+
+    <div id="hud" aria-hidden="true">
+      <div id="tilt-meter" title="Nudge strength"><i></i><b></b></div>
+      <div id="fps"></div>
+    </div>
+
+    <div id="slot">
+      <!-- Loading -->
+      <section class="panel" id="panel-boot" data-panel="boot">
+        <header class="screen title">
+          <span class="title-small">3D Pinball</span>
+          <span class="title-big">Space Cadet</span>
+        </header>
+        <div class="screen boot-status">
+          <p id="boot-text">Warming up the table…</p>
+          <div class="meter" role="progressbar" aria-label="Loading" aria-valuemin="0" aria-valuemax="100"><i id="boot-bar"></i></div>
+        </div>
+      </section>
+
+      <!-- No game data yet -->
+      <section class="panel" id="panel-data" data-panel="data" hidden>
+        <header class="screen title">
+          <span class="title-small">3D Pinball</span>
+          <span class="title-big">Space Cadet</span>
+        </header>
+        <div class="screen copy">
+          <h2>Add the table files</h2>
+          <p>Space Cadet needs its original data: <b>PINBALL.DAT</b> and the sounds from 3D Pinball for Windows, or <b>CADET.DAT</b> from Full Tilt! Pinball.</p>
+          <p class="dim">They stay in this browser after the first import.</p>
+        </div>
+        <div class="stack">
+          <button class="btn primary" data-nav data-cmd="import-folder">Choose folder</button>
+          <button class="btn" data-nav data-cmd="import-zip">Choose a .zip or files</button>
+        </div>
+        <details class="screen copy where" open>
+          <summary>Where to find them</summary>
+          <p>Windows XP: <code>C:\<wbr>Program Files\<wbr>Windows NT\<wbr>Pinball</code></p>
+          <p>Full Tilt! Pinball: the <code>CADET</code> folder on the CD</p>
+          <p>Running the container? Put them in the folder mounted at <code>/data</code> and reload.</p>
+        </details>
+        <p class="hint">Or drop the folder anywhere on this page.</p>
+      </section>
+
+      <!-- Home -->
+      <section class="panel" id="panel-home" data-panel="home" hidden>
+        <header class="screen title">
+          <span class="title-small">3D Pinball</span>
+          <span class="title-big">Space Cadet</span>
+        </header>
+        <button class="btn primary play" data-nav data-cmd="play" id="play-btn">
+          <span>Play</span>
+          <kbd>Enter</kbd>
+        </button>
+        <div class="row">
+          <span class="row-label" id="players-label">Players</span>
+          <div class="seg" role="radiogroup" aria-labelledby="players-label" id="players-seg">
+            <button role="radio" data-nav data-players="1">1</button>
+            <button role="radio" data-nav data-players="2">2</button>
+            <button role="radio" data-nav data-players="3">3</button>
+            <button role="radio" data-nav data-players="4">4</button>
+          </div>
+        </div>
+        <div class="row" id="table-row" hidden>
+          <span class="row-label" id="table-label">Table</span>
+          <div class="seg" role="radiogroup" aria-labelledby="table-label" id="table-seg"></div>
+        </div>
+        <div class="screen scores">
+          <div class="scores-head">
+            <h2>High Scores</h2>
+            <div class="seg tiny" id="scores-scope" hidden>
+              <button data-scope="shared" data-nav>House</button>
+              <button data-scope="local" data-nav>Mine</button>
+            </div>
+          </div>
+          <ol id="home-scores"></ol>
+        </div>
+        <div class="screen keys" id="home-keys"></div>
+        <nav class="toolbar">
+          <button class="icon-btn" data-nav data-cmd="settings" title="Settings (F8)" aria-label="Settings"><svg><use href="#i-gear"/></svg></button>
+          <button class="icon-btn" data-nav data-cmd="fullscreen" title="Full screen (F4)" aria-label="Full screen" data-fullscreen><svg><use href="#i-full"/></svg></button>
+          <button class="icon-btn" data-nav data-cmd="data" title="Game data" aria-label="Game data"><svg><use href="#i-disk"/></svg></button>
+        </nav>
+      </section>
+
+      <!-- Pause -->
+      <section class="panel" id="panel-pause" data-panel="pause" hidden>
+        <header class="screen title">
+          <span class="title-big">Paused</span>
+          <span class="title-small" id="pause-score"></span>
+        </header>
+        <div class="stack menu">
+          <button class="btn primary" data-nav data-cmd="resume"><span>Resume</span><kbd>Esc</kbd></button>
+          <button class="btn" data-nav data-cmd="restart"><span>Restart game</span><kbd>R</kbd></button>
+          <button class="btn" data-nav data-cmd="settings"><span>Settings</span><kbd>S</kbd></button>
+          <button class="btn" data-nav data-cmd="fullscreen" data-fullscreen-label><span>Full screen</span><kbd>F4</kbd></button>
+          <button class="btn" data-nav data-cmd="home"><span>Quit to home</span><kbd>Q</kbd></button>
+        </div>
+        <div class="screen keys" id="pause-keys"></div>
+      </section>
+
+      <!-- Game over -->
+      <section class="panel" id="panel-over" data-panel="over" hidden>
+        <header class="screen title">
+          <span class="title-big">Game Over</span>
+          <span class="title-small" id="over-sub"></span>
+        </header>
+        <div class="screen final">
+          <ol id="over-scores"></ol>
+          <p id="over-note" class="dim"></p>
+        </div>
+        <form class="screen entry" id="over-entry" hidden autocomplete="off">
+          <label for="over-name" id="over-entry-label">New high score</label>
+          <p class="rank" id="over-rank"></p>
+          <input id="over-name" maxlength="20" placeholder="Your name" spellcheck="false" autocapitalize="words" enterkeyhint="done" required>
+          <button class="btn primary" type="submit" data-nav>Save score</button>
+        </form>
+        <div class="stack" id="over-actions">
+          <button class="btn primary" data-nav data-cmd="again"><span>Play again</span><kbd>Enter</kbd></button>
+          <button class="btn" data-nav data-cmd="home"><span>Home</span><kbd>Esc</kbd></button>
+        </div>
+        <div class="screen over-board" id="over-board-wrap" hidden>
+          <h2 id="over-board-title">High Scores</h2>
+          <ol id="over-board"></ol>
+        </div>
+      </section>
+    </div>
+
+    <div id="touch" hidden data-ui>
+      <button data-action="menu" class="touch-btn touch-menu" aria-label="Menu"><svg><use href="#i-menu"/></svg></button>
+      <button data-action="tilt" class="touch-btn touch-tilt">Tilt</button>
+      <button data-action="plunger" class="touch-btn touch-launch">Launch</button>
+    </div>
+  </main>
+
+  <dialog id="settings" aria-labelledby="settings-title">
+    <form method="dialog" class="dialog-frame">
+      <header class="dialog-head">
+        <h1 id="settings-title">Settings</h1>
+        <button class="icon-btn" value="close" aria-label="Close settings"><svg><use href="#i-close"/></svg></button>
+      </header>
+      <nav class="tabs" role="tablist">
+        <button type="button" role="tab" data-tab="display" aria-selected="true">Display</button>
+        <button type="button" role="tab" data-tab="sound">Sound</button>
+        <button type="button" role="tab" data-tab="controls">Controls</button>
+        <button type="button" role="tab" data-tab="game">Game</button>
+      </nav>
+      <div class="tab-body" id="settings-body"></div>
+    </form>
+  </dialog>
+
+  <input type="file" id="pick-folder" webkitdirectory directory multiple hidden>
+  <input type="file" id="pick-files" accept=".zip,.dat,.wav,.mid,.mds,.dls,.sf2,application/zip" multiple hidden>
+  <div id="dropzone" hidden><p>Drop the game folder or ZIP</p></div>
+  <div id="toasts" aria-live="polite"></div>
+  <!--build:body-->
+</body>
+</html>
