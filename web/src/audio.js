@@ -256,7 +256,8 @@ export class AudioEngine {
         const reason = String(err?.message || err);
         console.warn(`Music: ${cfg.bankName} could not be used:`, reason);
         this.musicError = { bankName: cfg.bankName, reason };
-        if (cfg.fallbackUrl && cfg.fallbackUrl !== cfg.bankUrl) {
+        // A different bank only helps when this one was the problem.
+        if (cfg.fallbackUrl && cfg.fallbackUrl !== cfg.bankUrl && err?.stage !== 'worklet') {
           try {
             player = await load(cfg.fallbackUrl, cfg.fallbackName);
             this.musicBank = cfg.fallbackName;

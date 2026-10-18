@@ -1,5 +1,5 @@
 // Service worker: makes the game load instantly and work offline once played.
-// __VERSION__ and __PRECACHE__ are filled in by build.mjs.
+// The version and precache list below are filled in by build.mjs.
 
 const VERSION = '__VERSION__';
 const PRECACHE = __PRECACHE__;

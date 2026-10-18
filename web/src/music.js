@@ -16,6 +16,12 @@ async function fetchWithProgress(url, onProgress) {
   const out = new Uint8Array(total);
   let got = 0;
   for (;;) {
+    // Every byte is here: don't wait on the stream's end-of-body signal,
+    // which some proxies and browsers deliver late or not at all.
+    if (got === total) {
+      reader.cancel().catch(() => {});
+      break;
+    }
     const { done, value } = await reader.read();
     if (done) break;
     if (got + value.length > out.length) {
@@ -36,6 +42,17 @@ async function fetchWithProgress(url, onProgress) {
 }
 
 const LOAD_TIMEOUT_MS = 30000;
+const WORKLET_TIMEOUT_MS = 15000;
+const DOWNLOAD_TIMEOUT_MS = 120000;
+let workletReady = null;
+
+function withTimeout(promise, ms, message) {
+  let timer = 0;
+  return Promise.race([
+    promise,
+    new Promise((_, reject) => { timer = setTimeout(() => reject(new Error(message)), ms); }),
+  ]).finally(() => clearTimeout(timer));
+}
 
 /** Turns a synthesizer error into one short sentence for the player. */
 function reasonOf(err) {
@@ -51,10 +68,20 @@ export class MusicPlayer {
    * pending forever, so that event and a timeout are raced against it.
    */
   static async create(ctx, destination, bankUrl, { onProgress, onStage } = {}) {
-    const [bank] = await Promise.all([
-      fetchWithProgress(bankUrl, onProgress),
+    const t0 = performance.now();
+    const ms = () => `${Math.round(performance.now() - t0)} ms`;
+    // The synthesizer's audio-thread code loads once per page.
+    workletReady ??= withTimeout(
       ctx.audioWorklet.addModule(PROCESSOR_URL.href),
+      WORKLET_TIMEOUT_MS,
+      `this browser didn't start the music engine (AudioWorklet, audio state "${ctx.state}")`,
+    ).then(() => console.info(`Music: synthesizer code loaded after ${ms()}`))
+      .catch((err) => { workletReady = null; err.stage = 'worklet'; throw err; });
+    const [bank] = await Promise.all([
+      withTimeout(fetchWithProgress(bankUrl, onProgress), DOWNLOAD_TIMEOUT_MS, 'the sound bank download stalled'),
+      workletReady,
     ]);
+    console.info(`Music: ${bank.byteLength} byte sound bank downloaded after ${ms()}`);
     onStage?.('instruments');
 
     const synth = new WorkletSynthesizer(ctx);
@@ -73,12 +100,15 @@ export class MusicPlayer {
       ]);
     } catch (err) {
       try { synth.destroy?.(); } catch { /* already gone */ }
-      throw new Error(reasonOf(err));
+      const e = new Error(reasonOf(err));
+      e.stage = 'bank';
+      throw e;
     } finally {
       clearTimeout(timer);
       synth.eventHandler.removeEvent('soundBankError', 'spacecadet-load');
     }
     synth.connect(destination);
+    console.info(`Music: instruments ready after ${ms()}`);
     return new MusicPlayer(synth);
   }
 

@@ -191,8 +191,9 @@ async function main() {
     const precache = ['./', 'manifest.webmanifest', 'icon.svg', 'icon-192.png', ...assetFiles];
     const version = hashOf(precache.join('\n') + html);
     const sw = (await fs.readFile(path.join(src, 'sw.js'), 'utf8'))
-      .replace('__VERSION__', version)
-      .replace('__PRECACHE__', JSON.stringify(precache));
+      .replaceAll("'__VERSION__'", JSON.stringify(version))
+      .replaceAll('__PRECACHE__', JSON.stringify(precache));
+    if (sw.includes('__VERSION__') || sw.includes('__PRECACHE__')) throw new Error('sw.js placeholders were not filled in');
     await fs.writeFile(path.join(out, 'sw.js'), sw);
     await fs.writeFile(path.join(out, 'build.json'), JSON.stringify({ ...buildInfo, build: version, builtAt: new Date().toISOString() }, null, 2));
     return version;
