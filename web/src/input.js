@@ -148,7 +148,12 @@ export class Input {
       return;
     }
 
-    if (down) this.h.onDevice?.('keyboard');
+    // On-screen keyboards (typing a name on a phone) don't count as a
+    // keyboard player: they report keyCode 229 or an "Unidentified" key.
+    if (down && !e.isComposing && e.keyCode !== 229 && e.key !== 'Unidentified' && e.key !== 'Process'
+      && !e.target?.closest?.('input, textarea, [contenteditable]')) {
+      this.h.onDevice?.('keyboard');
+    }
 
     // Windows can drop the keyup of one Shift while the other is held. Any
     // event that reports Shift as up releases both, so a flipper never sticks.

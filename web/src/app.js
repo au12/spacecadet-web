@@ -61,7 +61,10 @@ class App {
     this.tiltLock = false;
     this.scoreScope = 'shared';
     this.sfxMuted = false;
-    this.touchSeen = matchMedia('(hover: none) and (pointer: coarse)').matches;
+    // A phone or tablet: the primary pointer is a finger (or it can't hover).
+    this.touchSeen = matchMedia('(pointer: coarse)').matches || matchMedia('(hover: none)').matches
+      || (navigator.maxTouchPoints > 0 && !matchMedia('(pointer: fine)').matches);
+    this.keyboardSeen = false;
     this.wasmModule = null;
     this.renderer.onLayout = () => this.placeSlot();
     this.tiltMeter = $('#tilt-meter');
@@ -200,7 +203,8 @@ class App {
   setState(next) {
     const prev = this.state;
     this.state = next;
-    document.body.className = next + (this.touchSeen ? ' touch' : '');
+    document.body.className = next;
+    this.applyInputUi();
     this.input.setMode(next === 'playing' ? 'game' : 'menu');
     this.renderer.setBoardOnly(next === 'home' || next === 'boot' || next === 'data');
 
@@ -414,13 +418,13 @@ class App {
   onDevice(kind, pad) {
     if (kind === 'touch' && !this.touchSeen) {
       this.touchSeen = true;
-      document.body.classList.add('touch');
       this.updateTouch();
-      this.renderKeyLegends();
+      this.applyInputUi();
     }
     if (kind === 'keyboard' && !this.keyboardSeen) {
+      // A tablet with a keyboard attached: show keys from now on.
       this.keyboardSeen = true;
-      if (this.touchSeen) this.renderKeyLegends();
+      this.applyInputUi();
     }
     if (kind === 'gamepad' && pad) {
       const name = (pad.id || 'Controller').replace(/\s*\(.*$/, '').slice(0, 40);
@@ -754,14 +758,40 @@ class App {
     })));
   }
 
+  /** True when hints should describe touch controls instead of keys. */
+  get touchUi() { return this.touchSeen && !this.keyboardSeen; }
+
+  /** Switches every hint on the page between keyboard and touch wording. */
+  applyInputUi() {
+    const touch = this.touchUi;
+    document.body.classList.toggle('touch', this.touchSeen);
+    document.body.classList.toggle('touch-ui', touch);
+    if (this._touchUiShown === touch) return;
+    this._touchUiShown = touch;
+    // Phones can't pick folders or drag files: offer the ZIP picker first.
+    $('[data-cmd="import-zip"]').classList.toggle('primary', touch);
+    $('[data-cmd="import-folder"]').classList.toggle('primary', !touch);
+    $('#panel-data .hint').textContent = touch
+      ? 'Zip the game folder first, then choose the .zip here.'
+      : 'Or drop the folder anywhere on this page.';
+    $('#play-btn').setAttribute('aria-keyshortcuts', touch ? '' : 'Enter');
+    this.renderKeyLegends();
+  }
+
   renderKeyLegends() {
-    if (this.touchSeen && !this.keyboardSeen) {
+    if (this.touchUi) {
       const rows = [
-        ['Tap left', 'Left flipper'], ['Tap right', 'Right flipper'],
-        ['Hold Launch', 'Pull the plunger'], ['Tilt', 'Bump the table'],
+        ['Tap left side', 'Left flipper'],
+        ['Tap right side', 'Right flipper'],
+        ['Hold Launch', 'Pull back, release to launch'],
+        ['Tilt', 'Bump the table'],
+      ];
+      const legend = (withMenu) => [
+        ...rows,
+        ...(withMenu ? [['☰', 'Pause menu']] : []),
       ].flatMap(([k, v]) => [el('span', { class: 'caps' }, el('span', { class: 'keycap', text: k })), el('span', { text: v })]);
-      $('#home-keys').replaceChildren(...rows.map((n) => n.cloneNode(true)));
-      $('#pause-keys').replaceChildren(...rows);
+      $('#home-keys').replaceChildren(...legend(true));
+      $('#pause-keys').replaceChildren(...legend(false));
       return;
     }
     const keys = this.settings.get('controls.keys');
@@ -1020,6 +1050,7 @@ class App {
           row('Stereo positioning', toggle('audio.stereo', 'Stereo positioning'), 'Places each sound left or right of where it happens on the table.')),
       ];
     } else if (tab === 'controls') {
+      const touchFirst = this.touchUi;
       const keys = s.get('controls.keys');
       const bindRow = (a) => {
         const chips = (keys[a.id] || []).map((code) => el('button', {
@@ -1046,15 +1077,18 @@ class App {
         return row(a.label, el('div', { class: 'bind-chips' }, chips, add));
       };
       content = [
-        group('Keyboard',
+        touchFirst ? group('Touch',
+          row('Touch controls', seg('controls.touch', [['auto', 'Auto'], ['on', 'On'], ['off', 'Off']]), 'Tap the left or right side of the screen to flip. Hold Launch to pull the plunger back and release to fire. Tilt bumps the table; ☰ pauses.'),
+          row('Vibration', toggle('controls.haptics', 'Vibration on touch'))) : null,
+        group(touchFirst ? 'Keyboard (if you connect one)' : 'Keyboard',
           ...ACTIONS.map(bindRow),
           row('Menu', el('span', { class: 'chip', text: 'Esc' }), 'Esc pauses and opens the menu. F2 restarts, F3 pauses, F4 toggles full screen, F5 effects, F6 music, F8 settings.'),
           el('div', { class: 'set-row' }, el('span'), el('div', { class: 'control' },
             el('button', { type: 'button', class: 'btn', text: 'Restore default keys', onclick: () => s.set('controls.keys', structuredClone(DEFAULT_KEYS)) }))),
           el('p', { class: 'note', text: 'Windows tip: pressing Shift five times opens the Sticky Keys prompt. Turn off its shortcut in Settings → Accessibility → Keyboard so it never interrupts a game.' })),
-        group('Mouse and touch',
+        touchFirst ? null : group('Mouse and touch',
           row('Mouse buttons flip', toggle('controls.mouse', 'Mouse buttons flip'), 'Left and right click work the flippers, middle click launches, side buttons bump the table.'),
-          row('Touch controls', seg('controls.touch', [['auto', 'Auto'], ['on', 'On'], ['off', 'Off']]), 'Tap the left or right half of the screen to flip. Hold Launch to pull the plunger.'),
+          row('Touch controls', seg('controls.touch', [['auto', 'Auto'], ['on', 'On'], ['off', 'Off']]), 'Tap the left or right side of the screen to flip. Hold Launch to pull the plunger.'),
           row('Vibration', toggle('controls.haptics', 'Vibration on touch'))),
         group('Controller',
           row('Rumble', toggle('controls.rumble', 'Controller rumble'), 'Bumpers and triggers flip, A launches, Y or up tilts, the D-pad bumps left and right, Start opens the menu.')),
