@@ -7,6 +7,7 @@ import { Settings, ACTIONS, DEFAULT_KEYS } from './settings.js';
 import { discover, detect, expandFiles, filesFromDrop, importDetected, deleteLocalData, KINDS } from './data.js';
 import { Scores, formatScore } from './scores.js';
 import { Starfield } from './starfield.js';
+import { arcade } from './arcade.js';
 
 /* global __BUILD__ */
 const BUILD = __BUILD__;
@@ -302,6 +303,7 @@ class App {
     this.engine.newGame(this.settings.get('game.players'));
     this.last = 0;
     this.setState('playing');
+    arcade.status('playing');
   }
 
   /** Lets go of every flipper/plunger in the engine (it ignores input while paused). */
@@ -319,6 +321,7 @@ class App {
     const line = `${who}${ball}: ${formatScore(st.scores[st.currentPlayer])}`;
     $('#pause-score').textContent = line.charAt(0).toUpperCase() + line.slice(1);
     this.setState('paused');
+    arcade.status('paused');
   }
 
   resume() {
@@ -336,6 +339,7 @@ class App {
     this.releaseEngineInputs();
     this.last = 0;
     this.setState('playing');
+    arcade.status('playing');
   }
 
   goHome() {
@@ -628,6 +632,10 @@ class App {
       cursorTimer = setTimeout(() => stage.classList.remove('cursor-awake'), 1500);
     });
 
+    // The arcade's menu pauses the table, like switching apps does.
+    arcade.on('pause', () => {
+      if (this.state === 'playing') this.pause();
+    });
     document.addEventListener('visibilitychange', () => {
       if (document.hidden && this.state === 'playing') this.pause();
       this.updateWakeLock();
@@ -843,6 +851,11 @@ class App {
       el('span', {}),
       el('span', { class: 'pts', text: formatScore(e.score) }))));
     $('#over-note').textContent = go.eligible ? '' : 'Cheats were used, so this game is not eligible for high scores.';
+    // The arcade's player is player 1. Games with cheats don't count there either.
+    arcade.status('over');
+    if (go.eligible && go.scores[0] > 0) {
+      arcade.score(go.scores[0], { meta: { players, table: this.table?.kind } });
+    }
 
     this.pendingEntries = [];
     this.lastSaved = null;
@@ -875,7 +888,7 @@ class App {
     $('#over-entry-label').textContent = entry.players > 1 ? `Player ${entry.player}: new high score` : 'New high score';
     $('#over-rank').textContent = `${formatScore(entry.score)}, ${where.join(' and ')}`;
     const input = $('#over-name');
-    input.value = this.settings.get('player.name') || (entry.players > 1 ? `Player ${entry.player}` : '');
+    input.value = (entry.player === 1 && arcade.player?.name) || this.settings.get('player.name') || (entry.players > 1 ? `Player ${entry.player}` : '');
     requestAnimationFrame(() => { input.focus(); input.select(); });
   }
 

@@ -19,4 +19,5 @@
   <Config Name="PGID" Target="PGID" Default="100" Mode="" Description="Group the server runs as" Type="Variable" Display="advanced" Required="false" Mask="false">100</Config>
   <Config Name="Trust proxy" Target="TRUST_PROXY" Default="false" Mode="" Description="Set true behind Nginx Proxy Manager so per-player rate limits use X-Forwarded-For" Type="Variable" Display="advanced" Required="false" Mask="false">false</Config>
   <Config Name="Leaderboard" Target="LEADERBOARD" Default="true" Mode="" Description="Shared high-score table" Type="Variable" Display="advanced" Required="false" Mask="false">true</Config>
+  <Config Name="Arcade address" Target="ARCADE_URL" Default="" Mode="" Description="Address of your au12 Arcade (https://arcade.example.com). Lets the arcade show this game and receive its scores. Leave empty for no arcade." Type="Variable" Display="always" Required="false" Mask="false"></Config>
 </Container>
