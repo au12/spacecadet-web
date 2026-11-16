@@ -6,6 +6,8 @@ services:
     ports:
       - "8080:8080"
     environment:
+      # Show this game in the au12 Arcade and send it the scores (see README):
+      # ARCADE_URL: "https://arcade.example.com"
       # The server starts as root only long enough to make /config writable,
       # then runs as this user. Unraid: 99 / 100.
       PUID: "1000"

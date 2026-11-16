@@ -15,6 +15,7 @@ import (
 	"log"
 	"net"
 	"net/http"
+	"net/url"
 	"os"
 	"os/signal"
 	"strconv"
@@ -34,6 +35,10 @@ type config struct {
 	TrustProxy  bool
 	LogRequests bool
 	PUID, PGID  int
+	// ArcadeURL is the address of an au12 Arcade (https://arcade.example.com).
+	// When set, that arcade may show the game in a frame, and the game posts
+	// scores to it for whoever is playing (see /arcade.json).
+	ArcadeURL string
 }
 
 func env(key, def string) string {
@@ -75,6 +80,7 @@ func loadConfig() config {
 		LogRequests: envBool("LOG_REQUESTS", false),
 		PUID:        envInt("PUID", 1000),
 		PGID:        envInt("PGID", 1000),
+		ArcadeURL:   cleanArcadeURL(env("ARCADE_URL", "")),
 	}
 }
 
@@ -139,13 +145,22 @@ func main() {
 			board.handleSubmit(w, r)
 		})
 	}
+	// Where the arcade is, for the arcade SDK when the game is played on its own.
+	mux.HandleFunc("GET /arcade.json", func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Cache-Control", "no-cache")
+		if cfg.ArcadeURL == "" {
+			writeJSON(w, http.StatusNotFound, map[string]string{"error": "no arcade configured"})
+			return
+		}
+		writeJSON(w, http.StatusOK, map[string]string{"url": cfg.ArcadeURL})
+	})
 	mux.HandleFunc("/api/", func(w http.ResponseWriter, r *http.Request) {
 		writeJSON(w, http.StatusNotFound, map[string]string{"error": "not found"})
 	})
 	mux.Handle("GET /data/", http.StripPrefix("/data/", data))
 	mux.Handle("/", static)
 
-	var handler http.Handler = securityHeaders(mux)
+	var handler http.Handler = securityHeaders(mux, cfg.ArcadeURL)
 	if cfg.LogRequests {
 		handler = logRequests(handler)
 	}
@@ -166,6 +181,9 @@ func main() {
 		_ = srv.Shutdown(shutdown)
 	}()
 
+	if cfg.ArcadeURL != "" {
+		log.Printf("arcade: %s may show this game and receive its scores", cfg.ArcadeURL)
+	}
 	log.Printf("listening on %s", cfg.Addr)
 	if err := srv.ListenAndServe(); err != nil && !errors.Is(err, http.ErrServerClosed) {
 		log.Fatal(err)
@@ -242,11 +260,29 @@ func clientIP(r *http.Request, trustProxy bool) string {
 	return host
 }
 
-const csp = "default-src 'self'; script-src 'self' 'wasm-unsafe-eval'; style-src 'self' 'unsafe-inline'; " +
-	"img-src 'self' data: blob:; media-src 'self' blob:; connect-src 'self' blob:; worker-src 'self' blob:; " +
-	"font-src 'self'; object-src 'none'; base-uri 'self'; frame-ancestors 'self'"
+// contentSecurityPolicy allows the arcade (if any) to frame the game and the
+// game to post scores to it; everything else stays same-origin.
+func contentSecurityPolicy(arcade string) string {
+	extra := ""
+	if arcade != "" {
+		extra = " " + arcade
+	}
+	return "default-src 'self'; script-src 'self' 'wasm-unsafe-eval'; style-src 'self' 'unsafe-inline'; " +
+		"img-src 'self' data: blob:; media-src 'self' blob:; connect-src 'self' blob:" + extra + "; worker-src 'self' blob:; " +
+		"font-src 'self'; object-src 'none'; base-uri 'self'; frame-ancestors 'self'" + extra
+}
 
-func securityHeaders(next http.Handler) http.Handler {
+// cleanArcadeURL keeps just the scheme and host of ARCADE_URL ("" if it isn't one).
+func cleanArcadeURL(raw string) string {
+	u, err := url.Parse(strings.TrimSpace(raw))
+	if err != nil || (u.Scheme != "https" && u.Scheme != "http") || u.Host == "" {
+		return ""
+	}
+	return u.Scheme + "://" + u.Host
+}
+
+func securityHeaders(next http.Handler, arcade string) http.Handler {
+	csp := contentSecurityPolicy(arcade)
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		h := w.Header()
 		h.Set("X-Content-Type-Options", "nosniff")
